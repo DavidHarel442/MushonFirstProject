@@ -1,41 +1,87 @@
-const mongoose = require('mongoose');
-const Users = require('./models/Users'); // Import the Users model
-const Chat = require('./models/ChatHistories');   // Import the Chat model
+const Users = require('./models/Users');
+const ChatHistories = require('./models/ChatHistories');
 
-async function logChatMessage(email, userRequest, httpResponse) {
+async function logChatMessage(email, userRequest, botResponse, chatId) {
   try {
-    // Retrieve the userId from the Users collection based on the email
+    console.log('Logging chat message:', { email, userRequest, botResponse, chatId });
+
+    if (!email || !userRequest) {
+      throw new Error('Email and userRequest are required');
+    }
+
     const user = await Users.findOne({ email });
-
     if (!user) {
-      console.error('User not found.');
-      return;
+      throw new Error('User not found.');
     }
 
-    const userId = user.email; // Extract the userId
+    const userId = user.email;
 
-    // Find the most recent chat document by userId
-    let chatDoc = await Chat.findOne({ userId }).sort({ createdAt: -1 });
+    const newMessage = {
+      request: userRequest,
+      response: botResponse || 'No response yet'
+    };
 
-    if (!chatDoc) {
-      // Create a new chat document if it doesn't exist
-      chatDoc = new Chat({
-        chatId: `${userId}-${Date.now()}`,
+    console.log('New message to be added:', newMessage);
+
+    let result = await ChatHistories.findOne({ userId });
+    let isNewChat = false;
+
+    if (!result) {
+      // Create new document if it doesn't exist
+      chatId = chatId || `${userId}-${Date.now()}`;
+      result = new ChatHistories({
         userId,
-        chat: [{ request: userRequest, response: httpResponse }]
+        chats: [{ chatId, messages: [newMessage] }]
       });
+      isNewChat = true;
     } else {
-      // Append the new request/response pair to the existing chat
-      chatDoc.chat.push({ request: userRequest, response: httpResponse });
+      if (!chatId) {
+        // Create a new chat
+        chatId = `${userId}-${Date.now()}`;
+        result.chats.push({ chatId, messages: [newMessage] });
+        isNewChat = true;
+      } else {
+        // Find existing chat or create new one if chatId doesn't exist
+        let chat = result.chats.find(c => c.chatId === chatId);
+        if (!chat) {
+          chat = { chatId, messages: [] };
+          result.chats.push(chat);
+          isNewChat = true;
+        }
+        chat.messages.push(newMessage);
+      }
     }
 
-    // Save the updated document
-    await chatDoc.save();
-    console.log('Chat log updated successfully.');
+    await result.save();
+
+    console.log('Updated chat history:', JSON.stringify(result, null, 2));
+
+    return { chatId, isNewChat };
 
   } catch (err) {
-    console.error('Error updating chat log:', err);
+    console.error('Error in logChatMessage:', err);
+    throw err;
   }
 }
 
-module.exports = { logChatMessage }; // Export the function
+async function getChatHistory(email, chatId) {
+  try {
+    const user = await Users.findOne({ email });
+    if (!user) {
+      throw new Error('User not found.');
+    }
+
+    const chatHistory = await ChatHistories.findOne(
+      { userId: user.email, 'chats.chatId': chatId },
+      { 'chats.$': 1 }
+    );
+
+    return chatHistory && chatHistory.chats[0] ? chatHistory.chats[0].messages : null;
+
+  } catch (err) {
+    console.error('Error retrieving chat history:', err);
+    throw err;
+  }
+}
+
+module.exports = { logChatMessage, getChatHistory };

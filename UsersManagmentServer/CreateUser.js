@@ -1,6 +1,5 @@
 const Users = require('./models/Users');
 
-// Function to create a new user in the database
 async function createUser(username, password, email) {
   try {
     const user = new Users({
@@ -18,7 +17,6 @@ async function createUser(username, password, email) {
   }
 }
 
-// Function to handle the route logic
 function createUserRoute(app) {
   app.post('/users', async (req, res) => {
     try {
