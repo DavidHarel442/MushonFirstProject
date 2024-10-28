@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Application</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+        .section {
+            margin-bottom: 20px;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .messages {
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .message {
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+        }
+        .user-message {
+            background-color: #e3f2fd;
+            margin-left: 20px;
+        }
+        .bot-message {
+            background-color: #f5f5f5;
+            margin-right: 20px;
+        }
+        .chat-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        input, button {
+            margin: 5px;
+            padding: 8px;
+        }
+        .error {
+            color: red;
+        }
+        .success {
+            color: green;
+        }
+        .chat-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .timestamp {
+            font-size: 0.8em;
+            color: #666;
+        }
+        .load-chat-section {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="section">
+        <h2>Register</h2>
+        <input type="text" id="username" placeholder="Username">
+        <input type="password" id="password" placeholder="Password">
+        <input type="email" id="email" placeholder="Email">
+        <button onclick="register()">Register</button>
+        <div id="registerResult"></div>
+    </div>
+
+    <div class="section">
+        <h2>Chat</h2>
+        <div class="chat-controls">
+            <input type="email" id="chatEmail" placeholder="Your Email">
+            <button onclick="createNewChat()">Create New Chat</button>
+        </div>
+
+        <div class="load-chat-section">
+            <input type="text" id="loadChatId" placeholder="Enter Chat ID">
+            <button onclick="loadSpecificChat()">Load Chat</button>
+        </div>
+
+        <div id="currentChatId"></div>
+        <div class="chat-controls">
+            <input type="text" id="messageInput" placeholder="Type your message" style="flex-grow: 1;">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+        <div class="messages" id="messagesContainer"></div>
+    </div>
+
+    <script>
+        let currentChatId = null;
+
+        async function register() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const email = document.getElementById('email').value;
+            const resultDiv = document.getElementById('registerResult');
+
+            try {
+                const response = await fetch('http://13.60.19.199:3000/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password, email })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    resultDiv.innerHTML = '<div class="success">Registration successful!</div>';
+                    document.getElementById('chatEmail').value = email;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function createNewChat() {
+            currentChatId = null;
+            document.getElementById('currentChatId').innerHTML = '<div class="success">New chat started</div>';
+            document.getElementById('messagesContainer').innerHTML = '';
+            document.getElementById('messageInput').value = '';
+            document.getElementById('loadChatId').value = '';
+        }
+
+        async function loadSpecificChat() {
+            const email = document.getElementById('chatEmail').value;
+            const chatId = document.getElementById('loadChatId').value;
+
+            if (!email || !chatId) {
+                alert('Please provide both email and Chat ID');
+                return;
+            }
+
+            try {
+                currentChatId = chatId;
+                document.getElementById('currentChatId').innerHTML = 
+                    `<small>Chat ID: ${currentChatId}</small>`;
+                await loadChatHistory(email, chatId);
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('currentChatId').innerHTML = 
+                    `<div class="error">Error loading chat: ${error.message}</div>`;
+            }
+        }
+
+        async function sendMessage() {
+            const email = document.getElementById('chatEmail').value;
+            const message = document.getElementById('messageInput').value;
+            
+            if (!email || !message) {
+                alert('Please provide both email and message');
+                return;
+            }
+
+            try {
+                const response = await fetch('http://13.60.19.199:3000/api/messages', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        email, 
+                        message,
+                        chatId: currentChatId 
+                    })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    currentChatId = data.chatId;
+                    document.getElementById('currentChatId').innerHTML = 
+                        `<small>Chat ID: ${currentChatId}</small>`;
+                    document.getElementById('loadChatId').value = currentChatId;
+                    document.getElementById('messageInput').value = '';
+                    await loadChatHistory(email, currentChatId);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        async function loadChatHistory(email, chatId) {
+            try {
+                const response = await fetch(
+                    `http://13.60.19.199:3000/api/chat-history?email=${email}&chatId=${chatId}`
+                );
+                if (!response.ok) {
+                    throw new Error('Failed to load chat history');
+                }
+                const messages = await response.json();
+                displayMessages(messages);
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('messagesContainer').innerHTML = 
+                    `<div class="error">Error loading chat history: ${error.message}</div>`;
+            }
+        }
+
+        function formatTimestamp(timestamp) {
+            return new Date(timestamp).toLocaleString();
+        }
+
+        function displayMessages(messages) {
+            const container = document.getElementById('messagesContainer');
+            if (!messages || messages.length === 0) {
+                container.innerHTML = '<div class="message">No messages in this chat.</div>';
+                return;
+            }
+            container.innerHTML = messages.map(msg => `
+                <div class="message user-message">
+                    <strong>User:</strong> ${msg.request}
+                    <div class="timestamp">${formatTimestamp(msg.createdAt)}</div>
+                </div>
+                <div class="message bot-message">
+                    <strong>Bot:</strong> ${msg.response}
+                </div>
+            `).join('');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Add event listener for Enter key in message input
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Add event listener for Enter key in load chat input
+        document.getElementById('loadChatId').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                loadSpecificChat();
+            }
+        });
+    </script>
+</body>
+</html>
